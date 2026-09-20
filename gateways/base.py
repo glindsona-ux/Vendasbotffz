@@ -16,6 +16,7 @@ bot, a criptografia em si é sempre aplicada a toda credencial.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from emojis_app import E
 
 
 @dataclass
@@ -44,7 +45,7 @@ class GatewayPagamento:
 
     NOME: str = "base"
     LABEL: str = "Gateway base"
-    EMOJI: str = "💳"
+    EMOJI: str = E.PIX
     # True = já está pronto pra uso real; False = "encaixe" ainda sem a
     # chamada de API implementada (ver livepix.py / pagbank.py).
     IMPLEMENTADO: bool = False

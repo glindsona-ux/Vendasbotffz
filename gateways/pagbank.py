@@ -19,12 +19,13 @@ cobrança automática, o bot mostra um aviso amigável e cai pro Pix manual
 from __future__ import annotations
 
 from .base import CampoConfig, GatewayPagamento, ResultadoCobranca
+from emojis_app import E
 
 
 class GatewayPagBank(GatewayPagamento):
     NOME = "pagbank"
     LABEL = "PagBank"
-    EMOJI = "🟧"
+    EMOJI = E.GATEWAY_PAGBANK
     IMPLEMENTADO = False
     CAMPOS_CONFIG = [
         CampoConfig(chave="token", label="Token da API do PagBank", obrigatorio=True, secreto=True),
@@ -46,4 +47,3 @@ class GatewayPagBank(GatewayPagamento):
     @classmethod
     def processar_webhook(cls, payload: dict, headers: dict) -> dict | None:
         return None
-      

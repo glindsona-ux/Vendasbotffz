@@ -21,6 +21,7 @@ import logging
 import aiohttp
 
 from .base import CampoConfig, GatewayPagamento, ResultadoCobranca
+from emojis_app import E
 
 logger = logging.getLogger("ffzvendas.gateway.mercadopago")
 
@@ -30,7 +31,7 @@ API_BASE = "https://api.mercadopago.com"
 class GatewayMercadoPago(GatewayPagamento):
     NOME = "mercadopago"
     LABEL = "Mercado Pago"
-    EMOJI = "🟦"
+    EMOJI = E.GATEWAY_MERCADOPAGO
     IMPLEMENTADO = True
     CAMPOS_CONFIG = [
         CampoConfig(

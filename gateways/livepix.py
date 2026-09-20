@@ -19,12 +19,13 @@ cobrança automática, o bot mostra um aviso amigável e cai pro Pix manual
 from __future__ import annotations
 
 from .base import CampoConfig, GatewayPagamento, ResultadoCobranca
+from emojis_app import E
 
 
 class GatewayLivePix(GatewayPagamento):
     NOME = "livepix"
     LABEL = "LivePix"
-    EMOJI = "🟪"
+    EMOJI = E.GATEWAY_LIVEPIX
     IMPLEMENTADO = False
     CAMPOS_CONFIG = [
         CampoConfig(chave="api_key", label="API Key do LivePix", obrigatorio=True, secreto=True),
