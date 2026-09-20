@@ -66,15 +66,17 @@ def montar_view_vitrine_publica(vitrine: dict, produtos: list[dict]) -> discord.
                 container.add_item(bloco)
 
     container.add_item(discord.ui.Separator())
-    linha = discord.ui.ActionRow()
-    linha.add_item(discord.ui.Button(
-        label="Comprar", style=discord.ButtonStyle.success, emoji=E.CARRINHO,
-        custom_id=_custom_id_comprar(vitrine["id"]),
-    ))
-    container.add_item(linha)
     container.add_item(discord.ui.TextDisplay("-# FFZ VENDAS • Clique em Comprar pra abrir seu atendimento privado"))
 
     view.add_item(container)
+
+    # Botão fica FORA do painel (container), cinza.
+    linha = discord.ui.ActionRow()
+    linha.add_item(discord.ui.Button(
+        label="Comprar", style=discord.ButtonStyle.secondary, emoji=E.CARRINHO,
+        custom_id=_custom_id_comprar(vitrine["id"]),
+    ))
+    view.add_item(linha)
     return view
 
 
