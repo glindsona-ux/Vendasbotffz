@@ -22,7 +22,7 @@ import discord
 from discord import app_commands
 
 import database as db
-import emojis_app
+from emojis_app import E
 
 logger = logging.getLogger("ffzvendas.licenca")
 
@@ -48,15 +48,15 @@ CORES_PLANO = {
 }
 
 PLANO_EMOJIS = {
-    "BASICO": "🔘",
-    "PREMIUM": "⚪",
-    "VITALICIO": "💎",
+    "BASICO": E.PLANO_BASICO,
+    "PREMIUM": E.PLANO_PREMIUM,
+    "VITALICIO": E.PLANO_VITALICIO,
 }
 
 
 def emoji_plano(plano: str) -> str:
     p = (plano or "").upper()
-    return emojis_app.obter(f"ffz_{p.lower()}", PLANO_EMOJIS.get(p, "🔑"))
+    return PLANO_EMOJIS.get(p, E.CHAVE)
 
 
 def barra_progresso(dias_restantes: float, dias_totais: float, tamanho: int = 12) -> str:
@@ -65,7 +65,7 @@ def barra_progresso(dias_restantes: float, dias_totais: float, tamanho: int = 12
     proporcao = max(0.0, min(1.0, dias_restantes / dias_totais))
     preenchido = round(proporcao * tamanho)
     preenchido = max(0, min(tamanho, preenchido))
-    return "⬜" * preenchido + "⬛" * (tamanho - preenchido)
+    return E.BARRA_CHEIA * preenchido + E.BARRA_VAZIA * (tamanho - preenchido)
 
 
 def formatar_tempo_restante(vence_str: str) -> tuple[str, float]:
@@ -97,7 +97,7 @@ class BotaoCopiarKey(discord.ui.Button):
     def __init__(self, chave: str):
         super().__init__(
             label="Copiar Key",
-            emoji=emojis_app.obter("ffz_copiar", "📋"),
+            emoji=E.COPIAR,
             style=discord.ButtonStyle.secondary,
             custom_id="licenca_copiar_key",
         )
@@ -216,7 +216,7 @@ def _embed_bloqueio(status: dict, client: discord.Client = None) -> discord.Embe
             "Entre em contato pra regularizar."
         )
 
-    embed = discord.Embed(title="🔒 Servidor sem acesso", description=desc, color=0xE0E0E0, timestamp=datetime.now())
+    embed = discord.Embed(title=f"{E.BLOQUEIO} Servidor sem acesso", description=desc, color=0xE0E0E0, timestamp=datetime.now())
     if client and client.user:
         embed.set_thumbnail(url=client.user.display_avatar.url)
     embed.set_footer(text="FFZ VENDAS • Licenciamento")

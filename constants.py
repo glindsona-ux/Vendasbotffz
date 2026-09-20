@@ -8,6 +8,7 @@ cinza/branco.
 """
 
 from enum import Enum
+from emojis_app import E
 
 
 class TipoEntrega(str, Enum):
@@ -34,8 +35,8 @@ TIPO_ENTREGA_LABEL = {
 }
 
 TIPO_ENTREGA_EMOJI = {
-    TipoEntrega.AUTOMATICA: "⚡",
-    TipoEntrega.MANUAL: "🎫",
+    TipoEntrega.AUTOMATICA: E.RAIO,
+    TipoEntrega.MANUAL: E.TICKET,
 }
 
 
@@ -57,11 +58,11 @@ STATUS_PEDIDO_LABEL = {
 }
 
 STATUS_PEDIDO_EMOJI = {
-    StatusPedido.AGUARDANDO_PAGAMENTO: "🕓",
-    StatusPedido.PAGO: "💳",
-    StatusPedido.ENTREGUE: "✅",
-    StatusPedido.CANCELADO: "🚫",
-    StatusPedido.EXPIRADO: "⌛",
+    StatusPedido.AGUARDANDO_PAGAMENTO: E.TEMPO,
+    StatusPedido.PAGO: E.PIX,
+    StatusPedido.ENTREGUE: E.OK,
+    StatusPedido.CANCELADO: E.CANCELADO,
+    StatusPedido.EXPIRADO: E.EXPIRADO,
 }
 
 # ─── Paleta (mesmo espírito neutro de licenca.py: CORES_PLANO) ─────────────

@@ -7,6 +7,7 @@ Quando o /configurar desse V2 nascer, dá pra portar o resto igual.
 """
 
 import discord
+from emojis_app import E
 
 
 async def eh_admin_do_bot(interaction: discord.Interaction) -> bool:
@@ -28,6 +29,6 @@ async def checar_admin_ou_avisar(interaction: discord.Interaction) -> bool:
     if await eh_admin_do_bot(interaction):
         return True
     await interaction.response.send_message(
-        "❌ Você não tem permissão para usar esse comando.", ephemeral=True
+        f"{E.ERRO} Você não tem permissão para usar esse comando.", ephemeral=True
     )
     return False

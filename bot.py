@@ -14,6 +14,7 @@ import database as db
 import licenca
 from constants import MINUTOS_EXPIRAR_PEDIDO
 from gateways import obter_classe_gateway, instanciar_gateway
+from emojis_app import E
 
 load_dotenv()
 
@@ -106,15 +107,15 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         if interaction.guild and licenca.bloqueio_recente(interaction.guild.id):
             return
         if not interaction.response.is_done():
-            await interaction.response.send_message("❌ Você não pode usar esse comando agora.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Você não pode usar esse comando agora.", ephemeral=True)
         return
 
     logger.error(f"Erro não tratado num app command: {error}", exc_info=True)
     try:
         if not interaction.response.is_done():
-            await interaction.response.send_message("❌ Ocorreu um erro ao executar o comando.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Ocorreu um erro ao executar o comando.", ephemeral=True)
         else:
-            await interaction.followup.send("❌ Ocorreu um erro ao executar o comando.", ephemeral=True)
+            await interaction.followup.send(f"{E.ERRO} Ocorreu um erro ao executar o comando.", ephemeral=True)
     except discord.HTTPException:
         pass
 
@@ -142,11 +143,11 @@ async def _confirmar_pagamento_automatico(pedido_id: int):
     linhas = []
     for item in resultado.get("entregue_auto", []):
         conteudo = "\n".join(f"`{c}`" for c in item["itens"])
-        linhas.append(f"⚡ **{item['nome']}** (entregue automaticamente):\n{conteudo}")
+        linhas.append(f"{E.RAIO} **{item['nome']}** (entregue automaticamente):\n{conteudo}")
     for item in resultado.get("pendente_manual", []):
-        linhas.append(f"🎫 **{item['nome']}** x{item['quantidade']} — pendente de entrega manual")
+        linhas.append(f"{E.TICKET} **{item['nome']}** x{item['quantidade']} — pendente de entrega manual")
 
-    texto = f"✅ **Pagamento confirmado automaticamente!** Pedido `#{pedido_id}`\n\n" + "\n".join(linhas)
+    texto = f"{E.OK} **Pagamento confirmado automaticamente!** Pedido `#{pedido_id}`\n\n" + "\n".join(linhas)
 
     if pedido.get("canal_thread_id"):
         try:
@@ -164,7 +165,7 @@ async def _confirmar_pagamento_automatico(pedido_id: int):
     if resultado.get("pendente_manual") and pedido.get("canal_thread_id"):
         try:
             canal = bot.get_channel(pedido["canal_thread_id"]) or await bot.fetch_channel(pedido["canal_thread_id"])
-            await canal.send(f"🎫 Item(ns) pendente(s) de entrega manual — rode `/pedido entregarmanual id:{pedido_id}` quando entregar.")
+            await canal.send(f"{E.TICKET} Item(ns) pendente(s) de entrega manual — rode `/pedido entregarmanual id:{pedido_id}` quando entregar.")
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
 
