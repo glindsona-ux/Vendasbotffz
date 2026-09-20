@@ -25,6 +25,7 @@ from constants import MINUTOS_EXPIRAR_PEDIDO, TIPO_ENTREGA_EMOJI, TipoEntrega
 from gateways import instanciar_gateway, obter_classe_gateway
 from permissoes import checar_admin_ou_avisar
 from pix_utils import gerar_qrcode_bytes, obter_logo_guild
+from emojis_app import E
 
 MAX_PRODUTOS_NA_VITRINE_VISUAL = 10
 
@@ -67,7 +68,7 @@ def montar_view_vitrine_publica(vitrine: dict, produtos: list[dict]) -> discord.
     container.add_item(discord.ui.Separator())
     linha = discord.ui.ActionRow()
     linha.add_item(discord.ui.Button(
-        label="Comprar", style=discord.ButtonStyle.success, emoji="🛒",
+        label="Comprar", style=discord.ButtonStyle.success, emoji=E.CARRINHO,
         custom_id=_custom_id_comprar(vitrine["id"]),
     ))
     container.add_item(linha)
@@ -100,12 +101,12 @@ class SelectProdutoThread(discord.ui.Select):
         produto_id = int(self.values[0])
         produto_atual = await db.obter_produto(produto_id)
         if not produto_atual or not produto_atual["ativo"]:
-            await interaction.response.send_message("❌ Esse produto não está mais disponível.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Esse produto não está mais disponível.", ephemeral=True)
             return
         if produto_atual["tipo_entrega"] == TipoEntrega.AUTOMATICA.value:
             disponivel = await db.contar_estoque_disponivel(produto_id)
             if disponivel == 0:
-                await interaction.response.send_message("❌ Esse produto está sem estoque no momento.", ephemeral=True)
+                await interaction.response.send_message(f"{E.ERRO} Esse produto está sem estoque no momento.", ephemeral=True)
                 return
 
         await db.adicionar_ao_carrinho(interaction.guild.id, interaction.user.id, produto_id)
@@ -117,7 +118,7 @@ class SelectProdutoThread(discord.ui.Select):
 def _texto_resumo(resumo: dict) -> str:
     itens = resumo["itens"]
     if not itens:
-        return "🛒 Seu pedido está vazio. Escolha um produto no menu abaixo."
+        return f"{E.CARRINHO} Seu pedido está vazio. Escolha um produto no menu abaixo."
     linhas = [f"• {i['quantidade']}x **{i['nome']}** — R$ {i['preco'] * i['quantidade']:.2f}" for i in itens]
     linhas.append("")
     linhas.append(f"**Total: R$ {resumo['total']:.2f}**")
@@ -130,7 +131,7 @@ async def _montar_tela_pedido_thread(guild_id: int, user_id: int, produtos_suger
 
     view = discord.ui.LayoutView(timeout=None)
     container = discord.ui.Container()
-    container.add_item(discord.ui.TextDisplay("### 🛍️ Seu pedido"))
+    container.add_item(discord.ui.TextDisplay(f"### {E.SACOLA} Seu pedido"))
     container.add_item(discord.ui.Separator())
     container.add_item(discord.ui.TextDisplay(_texto_resumo(resumo)))
     container.add_item(discord.ui.Separator())
@@ -166,7 +167,7 @@ async def _gateway_padrao_disponivel(guild_id: int) -> str | None:
 
 class BotaoEsvaziarPedido(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Esvaziar", style=discord.ButtonStyle.danger, emoji="🧹")
+        super().__init__(label="Esvaziar", style=discord.ButtonStyle.danger, emoji=E.LIXO)
 
     async def callback(self, interaction: discord.Interaction):
         await db.limpar_carrinho(interaction.guild.id, interaction.user.id)
@@ -188,7 +189,7 @@ async def _produtos_do_topico(interaction: discord.Interaction) -> list[dict]:
 
 class BotaoJaPagueiThread(discord.ui.Button):
     def __init__(self, pedido_id: int):
-        super().__init__(label="Já paguei", style=discord.ButtonStyle.primary, emoji="✅", custom_id=f"vitrine_ja_paguei_{pedido_id}")
+        super().__init__(label="Já paguei", style=discord.ButtonStyle.primary, emoji=E.OK, custom_id=f"vitrine_ja_paguei_{pedido_id}")
         self.pedido_id = pedido_id
 
     async def callback(self, interaction: discord.Interaction):
@@ -200,20 +201,20 @@ class BotaoJaPagueiThread(discord.ui.Button):
         self.label = "Aguardando confirmação..."
         await interaction.response.edit_message(view=self.view)
         await interaction.followup.send(
-            f"📥 **Novo pagamento a confirmar** — Pedido `#{pedido['id']}` de {interaction.user.mention} "
+            f"{E.RECEBIDO} **Novo pagamento a confirmar** — Pedido `#{pedido['id']}` de {interaction.user.mention} "
             f"— R$ {pedido['valor_total']:.2f}\nUm admin precisa rodar `/pedido aprovar id:{pedido['id']}` pra liberar a entrega."
         )
 
 
 class BotaoFinalizarPixManual(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Pagar com Pix (manual)", style=discord.ButtonStyle.success, emoji="🔑")
+        super().__init__(label="Pagar com Pix (manual)", style=discord.ButtonStyle.success, emoji=E.PIX)
 
     async def callback(self, interaction: discord.Interaction):
         config = await db.obter_config_loja(interaction.guild.id)
         if not config or not config.get("chave_pix"):
             await interaction.response.send_message(
-                "❌ A loja ainda não tem uma chave Pix configurada. Peça pra um admin rodar `/configurarloja`.",
+                f"{E.ERRO} A loja ainda não tem uma chave Pix configurada. Peça pra um admin rodar `/configurarloja`.",
                 ephemeral=True,
             )
             return
@@ -222,7 +223,7 @@ class BotaoFinalizarPixManual(discord.ui.Button):
 
         pedido, erro = await db.criar_pedido_do_carrinho(interaction.guild.id, interaction.user.id)
         if not pedido:
-            await interaction.followup.send(f"❌ {erro}")
+            await interaction.followup.send(f"{E.ERRO} {erro}")
             return
 
         await db.definir_thread_pedido(pedido["id"], interaction.channel.id)
@@ -239,7 +240,7 @@ class BotaoFinalizarPixManual(discord.ui.Button):
 
         view = discord.ui.LayoutView(timeout=None)
         container = discord.ui.Container()
-        container.add_item(discord.ui.TextDisplay(f"### 💳 Pedido `#{pedido['id']}` — R$ {pedido['valor_total']:.2f}"))
+        container.add_item(discord.ui.TextDisplay(f"### {E.PIX} Pedido `#{pedido['id']}` — R$ {pedido['valor_total']:.2f}"))
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(resumo_txt))
         container.add_item(discord.ui.Separator())
@@ -259,21 +260,21 @@ class BotaoFinalizarPixManual(discord.ui.Button):
 class BotaoFinalizarAutomatico(discord.ui.Button):
     def __init__(self, gateway_nome: str):
         classe = obter_classe_gateway(gateway_nome)
-        super().__init__(label=f"Pagar automático ({classe.LABEL})", style=discord.ButtonStyle.primary, emoji="⚡")
+        super().__init__(label=f"Pagar automático ({classe.LABEL})", style=discord.ButtonStyle.primary, emoji=E.RAIO)
         self.gateway_nome = gateway_nome
 
     async def callback(self, interaction: discord.Interaction):
         credenciais = await db.obter_gateway_config(interaction.guild.id, self.gateway_nome)
         classe = obter_classe_gateway(self.gateway_nome)
         if not credenciais:
-            await interaction.response.send_message("❌ Esse gateway não está mais configurado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Esse gateway não está mais configurado nesse servidor.", ephemeral=True)
             return
 
         await interaction.response.defer(thinking=True)
 
         pedido, erro = await db.criar_pedido_do_carrinho(interaction.guild.id, interaction.user.id)
         if not pedido:
-            await interaction.followup.send(f"❌ {erro}")
+            await interaction.followup.send(f"{E.ERRO} {erro}")
             return
         await db.definir_thread_pedido(pedido["id"], interaction.channel.id)
 
@@ -287,7 +288,7 @@ class BotaoFinalizarAutomatico(discord.ui.Button):
         )
         if not resultado.ok:
             await db.cancelar_pedido(pedido["id"])
-            await interaction.followup.send(f"❌ {resultado.erro}")
+            await interaction.followup.send(f"{E.ERRO} {resultado.erro}")
             return
 
         await db.definir_gateway_pedido(pedido["id"], self.gateway_nome, resultado.charge_id)
@@ -340,12 +341,12 @@ async def abrir_topico_de_compra(interaction: discord.Interaction, vitrine_id: i
         await thread.add_user(interaction.user)
     except discord.Forbidden:
         await interaction.followup.send(
-            "❌ Não tenho permissão pra criar tópicos privados nesse canal. Peça pra um admin me dar a permissão "
+            f"{E.ERRO} Não tenho permissão pra criar tópicos privados nesse canal. Peça pra um admin me dar a permissão "
             "**Criar tópicos privados**.", ephemeral=True,
         )
         return
     except discord.HTTPException:
-        await interaction.followup.send("❌ Não consegui abrir seu atendimento agora. Tente de novo.", ephemeral=True)
+        await interaction.followup.send(f"{E.ERRO} Não consegui abrir seu atendimento agora. Tente de novo.", ephemeral=True)
         return
 
     if vitrine_id:
@@ -364,7 +365,7 @@ async def abrir_topico_de_compra(interaction: discord.Interaction, vitrine_id: i
         view = await _montar_tela_pedido_thread(interaction.guild.id, interaction.user.id, produtos)
         await thread.send(content=f"{interaction.user.mention} bem-vindo(a)! Escolha o que quer comprar:", view=view)
 
-    await interaction.followup.send(f"✅ Abri seu atendimento privado: {thread.mention}", ephemeral=True)
+    await interaction.followup.send(f"{E.OK} Abri seu atendimento privado: {thread.mention}", ephemeral=True)
 
 
 # ─── Comandos de admin ──────────────────────────────────────────────────────
@@ -412,15 +413,15 @@ class Vitrine(commands.Cog):
             try:
                 cor = int(cor_hex.strip().lstrip("#"), 16)
             except ValueError:
-                await interaction.response.send_message("❌ Cor inválida — use um hexadecimal tipo `FF5500`.", ephemeral=True)
+                await interaction.response.send_message(f"{E.ERRO} Cor inválida — use um hexadecimal tipo `FF5500`.", ephemeral=True)
                 return
         banner_limpo = db.limpar_url_imagem(banner_url) if banner_url else None
         vitrine_id, erro = await db.criar_vitrine(interaction.guild.id, nome, titulo, descricao, banner_limpo, cor)
         if erro:
-            await interaction.response.send_message(f"❌ {erro}", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} {erro}", ephemeral=True)
             return
         await interaction.response.send_message(
-            f"✅ Vitrine `#{vitrine_id}` criada. Agora adicione produtos com `/vitrine produto_add` e depois "
+            f"{E.OK} Vitrine `#{vitrine_id}` criada. Agora adicione produtos com `/vitrine produto_add` e depois "
             f"publique com `/vitrine postar`.", ephemeral=True,
         )
 
@@ -431,14 +432,14 @@ class Vitrine(commands.Cog):
             return
         vitrine = await db.obter_vitrine_por_slug(interaction.guild.id, nome)
         if not vitrine:
-            await interaction.response.send_message("❌ Vitrine não encontrada.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Vitrine não encontrada.", ephemeral=True)
             return
         produto = await db.obter_produto(produto_id)
         if not produto or produto["guild_id"] != interaction.guild.id:
-            await interaction.response.send_message("❌ Produto não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Produto não encontrado nesse servidor.", ephemeral=True)
             return
         await db.adicionar_produto_vitrine(vitrine["id"], produto_id)
-        await interaction.response.send_message(f"✅ **{produto['nome']}** adicionado à vitrine **{vitrine['titulo']}**.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} **{produto['nome']}** adicionado à vitrine **{vitrine['titulo']}**.", ephemeral=True)
 
     @vitrine.command(name="produto_remover", description="[ADMIN] Remove um produto de uma vitrine.")
     @app_commands.describe(nome="Nome/slug da vitrine", produto_id="ID do produto")
@@ -447,10 +448,10 @@ class Vitrine(commands.Cog):
             return
         vitrine = await db.obter_vitrine_por_slug(interaction.guild.id, nome)
         if not vitrine:
-            await interaction.response.send_message("❌ Vitrine não encontrada.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Vitrine não encontrada.", ephemeral=True)
             return
         await db.remover_produto_vitrine(vitrine["id"], produto_id)
-        await interaction.response.send_message("✅ Produto removido da vitrine.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Produto removido da vitrine.", ephemeral=True)
 
     @vitrine.command(name="listar", description="[ADMIN] Lista as vitrines desse servidor.")
     async def vitrine_listar(self, interaction: discord.Interaction):
@@ -464,7 +465,7 @@ class Vitrine(commands.Cog):
         for v in vitrines:
             produtos = await db.produtos_da_vitrine(v["id"], apenas_ativos=False)
             linhas.append(f"`{v['slug']}` — **{v['titulo']}** — {len(produtos)} produto(s)")
-        view = licenca.montar_view_licenca("🖼️ Vitrines", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.SACOLA} Vitrines", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
 
     @vitrine.command(name="remover", description="[ADMIN] Apaga uma vitrine (não apaga os produtos, só o post).")
@@ -474,10 +475,10 @@ class Vitrine(commands.Cog):
             return
         vitrine = await db.obter_vitrine_por_slug(interaction.guild.id, nome)
         if not vitrine:
-            await interaction.response.send_message("❌ Vitrine não encontrada.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Vitrine não encontrada.", ephemeral=True)
             return
         await db.remover_vitrine(vitrine["id"])
-        await interaction.response.send_message(f"✅ Vitrine **{vitrine['titulo']}** removida.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Vitrine **{vitrine['titulo']}** removida.", ephemeral=True)
 
     @vitrine.command(name="postar", description="[ADMIN] Publica a vitrine nesse canal com o botão Comprar.")
     @app_commands.describe(nome="Nome/slug da vitrine")
@@ -486,7 +487,7 @@ class Vitrine(commands.Cog):
             return
         vitrine = await db.obter_vitrine_por_slug(interaction.guild.id, nome)
         if not vitrine:
-            await interaction.response.send_message("❌ Vitrine não encontrada.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Vitrine não encontrada.", ephemeral=True)
             return
         produtos = await db.produtos_da_vitrine(vitrine["id"])
         view = montar_view_vitrine_publica(vitrine, produtos)

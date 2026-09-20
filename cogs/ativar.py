@@ -5,6 +5,7 @@ from discord.ext import commands
 import database as db
 import licenca
 from owner import is_owner
+from emojis_app import E
 
 
 class Ativar(commands.Cog):
@@ -36,13 +37,13 @@ class Ativar(commands.Cog):
             return
 
         mensagens = {
-            "nao_encontrada": "❌ Essa chave não existe. Confere se copiou certinho.",
-            "cancelada": "❌ Essa chave foi cancelada e não pode mais ser usada.",
-            "ja_usada": "❌ Essa chave já foi usada em outro servidor — cada chave só serve pra um servidor.",
+            "nao_encontrada": f"{E.ERRO} Essa chave não existe. Confere se copiou certinho.",
+            "cancelada": f"{E.ERRO} Essa chave foi cancelada e não pode mais ser usada.",
+            "ja_usada": f"{E.ERRO} Essa chave já foi usada em outro servidor — cada chave só serve pra um servidor.",
         }
         await licenca.responder_seguro(
             interaction,
-            content=mensagens.get(motivo, "❌ Não foi possível ativar essa chave."),
+            content=mensagens.get(motivo, f"{E.ERRO} Não foi possível ativar essa chave."),
             ephemeral=True,
         )
 
@@ -56,7 +57,7 @@ class Ativar(commands.Cog):
 
         if not status["ativo"]:
             view = licenca.montar_view_licenca(
-                "🔒 Sem licença ativa",
+                f"{E.BLOQUEIO} Sem licença ativa",
                 ["Use `/ativar chave:SUA-KEY-AQUI` pra ativar."],
                 client=interaction.client,
             )
@@ -112,23 +113,23 @@ class Ativar(commands.Cog):
 
         linhas = []
         for c in chaves:
-            status = "🚫 cancelada" if c["cancelada"] else ("✅ usada" if c["usado_por"] else "⬜ disponível")
+            status = f"{E.CANCELADO} cancelada" if c["cancelada"] else (f"{E.OK} usada" if c["usado_por"] else f"{E.DISPONIVEL} disponível")
             linhas.append(f"`#{c['id']}` {c['chave_mascarada']} — {c['plano']} ({c['dias']}d) — {status}")
 
-        view = licenca.montar_view_licenca("🔑 Últimas keys geradas", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.CHAVE} Últimas keys geradas", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
 
     @app_commands.command(name="revogarlicenca", description="[DONO] Revoga a licença de um servidor (chargeback, calote, etc).")
     @is_owner()
     async def revogarlicenca(self, interaction: discord.Interaction, guild_id: str):
         await db.revogar_licenca(int(guild_id))
-        await interaction.response.send_message(f"✅ Licença do servidor `{guild_id}` revogada.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Licença do servidor `{guild_id}` revogada.", ephemeral=True)
 
     @app_commands.command(name="estenderlicenca", description="[DONO] Estende a licença de um servidor.")
     @is_owner()
     async def estenderlicenca(self, interaction: discord.Interaction, guild_id: str, dias: int):
         nova_vence = await db.estender_licenca(int(guild_id), dias)
-        await interaction.response.send_message(f"✅ Licença estendida até `{nova_vence}`.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Licença estendida até `{nova_vence}`.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

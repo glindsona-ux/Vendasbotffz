@@ -22,6 +22,7 @@ import database as db
 import licenca
 from constants import MINUTOS_EXPIRAR_PEDIDO, PRODUTOS_POR_PAGINA, TIPO_ENTREGA_EMOJI, TipoEntrega
 from pix_utils import gerar_qrcode_bytes, obter_logo_guild
+from emojis_app import E
 
 
 def _linha_produto(p: dict) -> str:
@@ -46,18 +47,18 @@ class SelectProduto(discord.ui.Select):
         produto_id = int(self.values[0])
         produto_atual = await db.obter_produto(produto_id)
         if not produto_atual or not produto_atual["ativo"]:
-            await interaction.response.send_message("❌ Esse produto não está mais disponível.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Esse produto não está mais disponível.", ephemeral=True)
             return
 
         if produto_atual["tipo_entrega"] == TipoEntrega.AUTOMATICA.value:
             disponivel = await db.contar_estoque_disponivel(produto_id)
             if disponivel == 0:
-                await interaction.response.send_message("❌ Esse produto está sem estoque no momento.", ephemeral=True)
+                await interaction.response.send_message(f"{E.ERRO} Esse produto está sem estoque no momento.", ephemeral=True)
                 return
 
         await db.adicionar_ao_carrinho(interaction.guild.id, interaction.user.id, produto_id)
         await interaction.response.send_message(
-            f"✅ **{produto_atual['nome']}** adicionado ao carrinho. Use `/carrinho` pra finalizar a compra.",
+            f"{E.OK} **{produto_atual['nome']}** adicionado ao carrinho. Use `/carrinho` pra finalizar a compra.",
             ephemeral=True,
         )
 
@@ -71,7 +72,7 @@ class LojaView(discord.ui.View):
 
 class BotaoRemoverItem(discord.ui.Button):
     def __init__(self, produto_id: int, nome: str):
-        super().__init__(label=f"Remover {nome[:60]}", style=discord.ButtonStyle.secondary, emoji="🗑️")
+        super().__init__(label=f"Remover {nome[:60]}", style=discord.ButtonStyle.secondary, emoji=E.LIXO)
         self.produto_id = produto_id
 
     async def callback(self, interaction: discord.Interaction):
@@ -81,7 +82,7 @@ class BotaoRemoverItem(discord.ui.Button):
 
 class BotaoEsvaziarCarrinho(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Esvaziar carrinho", style=discord.ButtonStyle.danger, emoji="🧹")
+        super().__init__(label="Esvaziar carrinho", style=discord.ButtonStyle.danger, emoji=E.LIXO)
 
     async def callback(self, interaction: discord.Interaction):
         await db.limpar_carrinho(interaction.guild.id, interaction.user.id)
@@ -90,13 +91,13 @@ class BotaoEsvaziarCarrinho(discord.ui.Button):
 
 class BotaoFinalizarCompra(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Finalizar compra (gerar Pix)", style=discord.ButtonStyle.success, emoji="💳")
+        super().__init__(label="Finalizar compra (gerar Pix)", style=discord.ButtonStyle.success, emoji=E.PIX)
 
     async def callback(self, interaction: discord.Interaction):
         config = await db.obter_config_loja(interaction.guild.id)
         if not config or not config.get("chave_pix"):
             await interaction.response.send_message(
-                "❌ A loja ainda não tem uma chave Pix configurada. Peça pra um admin rodar `/configurarpagamento`.",
+                f"{E.ERRO} A loja ainda não tem uma chave Pix configurada. Peça pra um admin rodar `/configurarpagamento`.",
                 ephemeral=True,
             )
             return
@@ -107,7 +108,7 @@ class BotaoFinalizarCompra(discord.ui.Button):
 
         pedido, erro = await db.criar_pedido_do_carrinho(interaction.guild.id, interaction.user.id)
         if not pedido:
-            await interaction.followup.send(f"❌ {erro}", ephemeral=True)
+            await interaction.followup.send(f"{E.ERRO} {erro}", ephemeral=True)
             return
 
         logo_bytes = await obter_logo_guild(interaction.guild)
@@ -124,13 +125,13 @@ class BotaoFinalizarCompra(discord.ui.Button):
         if pedido.get("desconto"):
             resumo += (
                 f"\n\nSubtotal: R$ {pedido['valor_bruto']:.2f}"
-                f"\n🎟️ Cupom `{pedido['cupom_codigo']}`: −R$ {pedido['desconto']:.2f}"
+                f"\n{E.CUPOM} Cupom `{pedido['cupom_codigo']}`: −R$ {pedido['desconto']:.2f}"
             )
         arquivo = discord.File(io.BytesIO(img_bytes.read()), filename="pix.png")
 
         view = discord.ui.LayoutView(timeout=None)
         container = discord.ui.Container()
-        container.add_item(discord.ui.TextDisplay(f"### 💳 Pedido `#{pedido['id']}` — R$ {pedido['valor_total']:.2f}"))
+        container.add_item(discord.ui.TextDisplay(f"### {E.PIX} Pedido `#{pedido['id']}` — R$ {pedido['valor_total']:.2f}"))
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(resumo))
         container.add_item(discord.ui.Separator())
@@ -161,12 +162,12 @@ class ModalCupom(discord.ui.Modal, title="Usar cupom de desconto"):
         guild_id, user_id = interaction.guild.id, interaction.user.id
         itens = await db.obter_carrinho(guild_id, user_id)
         if not itens:
-            await interaction.response.send_message("❌ Seu carrinho está vazio.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Seu carrinho está vazio.", ephemeral=True)
             return
 
         calculo = await db.calcular_cupom(guild_id, user_id, str(self.codigo), itens)
         if not calculo["ok"]:
-            await interaction.response.send_message(f"❌ {calculo['erro']}", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} {calculo['erro']}", ephemeral=True)
             return
 
         await db.definir_cupom_carrinho(guild_id, user_id, str(self.codigo))
@@ -175,7 +176,7 @@ class ModalCupom(discord.ui.Modal, title="Usar cupom de desconto"):
 
 class BotaoCupom(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Usar cupom", style=discord.ButtonStyle.secondary, emoji="🎟️")
+        super().__init__(label="Usar cupom", style=discord.ButtonStyle.secondary, emoji=E.CUPOM)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(ModalCupom())
@@ -183,7 +184,7 @@ class BotaoCupom(discord.ui.Button):
 
 class BotaoRemoverCupom(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Tirar cupom", style=discord.ButtonStyle.secondary, emoji="❌")
+        super().__init__(label="Tirar cupom", style=discord.ButtonStyle.secondary, emoji=E.ERRO)
 
     async def callback(self, interaction: discord.Interaction):
         await db.remover_cupom_carrinho(interaction.guild.id, interaction.user.id)
@@ -192,7 +193,7 @@ class BotaoRemoverCupom(discord.ui.Button):
 
 class BotaoJaPaguei(discord.ui.Button):
     def __init__(self, pedido_id: int):
-        super().__init__(label="Já paguei", style=discord.ButtonStyle.primary, emoji="✅", custom_id=f"loja_ja_paguei_{pedido_id}")
+        super().__init__(label="Já paguei", style=discord.ButtonStyle.primary, emoji=E.OK, custom_id=f"loja_ja_paguei_{pedido_id}")
         self.pedido_id = pedido_id
 
     async def callback(self, interaction: discord.Interaction):
@@ -206,7 +207,7 @@ class BotaoJaPaguei(discord.ui.Button):
         await interaction.response.edit_message(view=self.view)
 
         await interaction.followup.send(
-            f"📥 **Novo pagamento a confirmar** — Pedido `#{pedido['id']}` de {interaction.user.mention} "
+            f"{E.RECEBIDO} **Novo pagamento a confirmar** — Pedido `#{pedido['id']}` de {interaction.user.mention} "
             f"— R$ {pedido['valor_total']:.2f}\nUm admin precisa rodar `/pedido aprovar id:{pedido['id']}` pra liberar a entrega.",
         )
 
@@ -217,23 +218,23 @@ def _montar_view_carrinho(resumo: dict) -> discord.ui.LayoutView:
     itens = resumo["itens"]
     view = discord.ui.LayoutView(timeout=180)
     container = discord.ui.Container()
-    container.add_item(discord.ui.TextDisplay("### 🛒 Seu carrinho"))
+    container.add_item(discord.ui.TextDisplay(f"### {E.CARRINHO} Seu carrinho"))
     container.add_item(discord.ui.Separator())
 
     if not itens:
         texto_vazio = "Vazio. Use `/loja` pra adicionar produtos."
         if resumo.get("aviso_cupom"):
-            texto_vazio += f"\n\n⚠️ Seu cupom foi removido: {resumo['aviso_cupom']}"
+            texto_vazio += f"\n\n{E.AVISO} Seu cupom foi removido: {resumo['aviso_cupom']}"
         container.add_item(discord.ui.TextDisplay(texto_vazio))
     else:
         linhas = [f"• {i['quantidade']}x **{i['nome']}** — R$ {i['preco'] * i['quantidade']:.2f}" for i in itens]
         linhas.append("")
         if resumo["cupom"]:
             linhas.append(f"Subtotal: R$ {resumo['subtotal']:.2f}")
-            linhas.append(f"🎟️ Cupom `{resumo['cupom']['codigo']}`: −R$ {resumo['desconto']:.2f}")
+            linhas.append(f"{E.CUPOM} Cupom `{resumo['cupom']['codigo']}`: −R$ {resumo['desconto']:.2f}")
         linhas.append(f"**Total: R$ {resumo['total']:.2f}**")
         if resumo.get("aviso_cupom"):
-            linhas.append(f"\n⚠️ Seu cupom foi removido: {resumo['aviso_cupom']}")
+            linhas.append(f"\n{E.AVISO} Seu cupom foi removido: {resumo['aviso_cupom']}")
         container.add_item(discord.ui.TextDisplay("\n".join(linhas)))
         container.add_item(discord.ui.Separator())
 
@@ -276,7 +277,7 @@ class Loja(commands.Cog):
             return
 
         linhas = [_linha_produto(p) for p in produtos[:PRODUTOS_POR_PAGINA * 5]]
-        view = licenca.montar_view_licenca("🛒 Loja", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.CARRINHO} Loja", linhas, client=interaction.client)
 
         select_view = LojaView(produtos)
         await interaction.response.send_message(view=view, ephemeral=True)

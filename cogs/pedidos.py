@@ -13,16 +13,17 @@ import database as db
 import licenca
 from constants import STATUS_PEDIDO_LABEL, STATUS_PEDIDO_EMOJI
 from permissoes import checar_admin_ou_avisar
+from emojis_app import E
 
 
 def _resumo_entrega(resultado: dict) -> list[str]:
     linhas = []
     for item in resultado.get("entregue_auto", []):
         conteudo = "\n".join(f"`{c}`" for c in item["itens"])
-        linhas.append(f"⚡ **{item['nome']}** (entregue automaticamente):\n{conteudo}")
+        linhas.append(f"{E.RAIO} **{item['nome']}** (entregue automaticamente):\n{conteudo}")
     for item in resultado.get("pendente_manual", []):
         motivo = "sem estoque no momento" if item["motivo"] == "sem_estoque" else "entrega manual"
-        linhas.append(f"🎫 **{item['nome']}** x{item['quantidade']} — pendente ({motivo})")
+        linhas.append(f"{E.TICKET} **{item['nome']}** x{item['quantidade']} — pendente ({motivo})")
     return linhas
 
 
@@ -40,11 +41,11 @@ class Pedidos(commands.Cog):
 
         pedido_atual = await db.obter_pedido(id)
         if not pedido_atual or pedido_atual["guild_id"] != interaction.guild.id:
-            await interaction.response.send_message("❌ Pedido não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Pedido não encontrado nesse servidor.", ephemeral=True)
             return
         if pedido_atual["status"] not in ("aguardando_pagamento",):
             await interaction.response.send_message(
-                f"❌ Esse pedido já está com status **{STATUS_PEDIDO_LABEL.get(pedido_atual['status'], pedido_atual['status'])}**.",
+                f"{E.ERRO} Esse pedido já está com status **{STATUS_PEDIDO_LABEL.get(pedido_atual['status'], pedido_atual['status'])}**.",
                 ephemeral=True,
             )
             return
@@ -56,7 +57,7 @@ class Pedidos(commands.Cog):
         # perde não pode disparar a entrega, senão o estoque sai duas vezes.
         if not await db.marcar_pedido_pago(id, aprovado_por=interaction.user.id):
             await interaction.followup.send(
-                "❌ Esse pedido acabou de ser aprovado (ou cancelado/expirado) por outra pessoa.", ephemeral=True
+                f"{E.ERRO} Esse pedido acabou de ser aprovado (ou cancelado/expirado) por outra pessoa.", ephemeral=True
             )
             return
         resultado = await db.processar_entrega_automatica(id)
@@ -66,7 +67,7 @@ class Pedidos(commands.Cog):
         status_final = STATUS_PEDIDO_LABEL.get(pedido_atualizado["status"], pedido_atualizado["status"])
 
         view = licenca.montar_view_licenca(
-            f"✅ Pedido `#{id}` aprovado — {status_final}",
+            f"{E.OK} Pedido `#{id}` aprovado — {status_final}",
             linhas_entrega or ["Nada a entregar automaticamente."],
             client=interaction.client,
         )
@@ -75,7 +76,7 @@ class Pedidos(commands.Cog):
         # Avisa o cliente por DM com o que já foi entregue / o que falta.
         try:
             comprador = await interaction.client.fetch_user(pedido_atualizado["user_id"])
-            texto_dm = f"✅ Seu pedido `#{id}` em **{interaction.guild.name}** foi aprovado!\n\n" + "\n".join(linhas_entrega)
+            texto_dm = f"{E.OK} Seu pedido `#{id}` em **{interaction.guild.name}** foi aprovado!\n\n" + "\n".join(linhas_entrega)
             if resultado.get("pendente_manual"):
                 texto_dm += "\n\nUm admin vai te chamar pra finalizar a entrega manual em breve."
             await comprador.send(texto_dm)
@@ -84,7 +85,7 @@ class Pedidos(commands.Cog):
 
         if resultado.get("pendente_manual"):
             await interaction.channel.send(
-                f"🎫 Pedido `#{id}` de <@{pedido_atualizado['user_id']}> tem item(ns) pendente(s) de entrega manual — "
+                f"{E.TICKET} Pedido `#{id}` de <@{pedido_atualizado['user_id']}> tem item(ns) pendente(s) de entrega manual — "
                 f"quando entregar, rode `/pedido entregarmanual id:{id}`."
             )
 
@@ -96,17 +97,17 @@ class Pedidos(commands.Cog):
 
         pedido_atual = await db.obter_pedido(id)
         if not pedido_atual or pedido_atual["guild_id"] != interaction.guild.id:
-            await interaction.response.send_message("❌ Pedido não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Pedido não encontrado nesse servidor.", ephemeral=True)
             return
         if pedido_atual["status"] != "pago":
             await interaction.response.send_message(
-                f"❌ Esse pedido está com status **{STATUS_PEDIDO_LABEL.get(pedido_atual['status'], pedido_atual['status'])}**, não dá pra marcar como entregue agora.",
+                f"{E.ERRO} Esse pedido está com status **{STATUS_PEDIDO_LABEL.get(pedido_atual['status'], pedido_atual['status'])}**, não dá pra marcar como entregue agora.",
                 ephemeral=True,
             )
             return
 
         await db.marcar_pedido_entregue_manual(id)
-        await interaction.response.send_message(f"✅ Pedido `#{id}` marcado como entregue.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Pedido `#{id}` marcado como entregue.", ephemeral=True)
 
     @pedido.command(name="cancelar", description="[ADMIN] Cancela um pedido que ainda está aguardando pagamento.")
     @app_commands.describe(id="ID do pedido")
@@ -116,19 +117,19 @@ class Pedidos(commands.Cog):
 
         pedido_atual = await db.obter_pedido(id)
         if not pedido_atual or pedido_atual["guild_id"] != interaction.guild.id:
-            await interaction.response.send_message("❌ Pedido não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Pedido não encontrado nesse servidor.", ephemeral=True)
             return
 
         if not await db.cancelar_pedido(id):
             # Pedido já pago/entregue não pode ser cancelado aqui: o estoque
             # já saiu pro cliente, e "devolver" ele ao estoque o venderia de novo.
             await interaction.response.send_message(
-                f"❌ Só dá pra cancelar pedido que está **aguardando pagamento** — o `#{id}` está com status "
+                f"{E.ERRO} Só dá pra cancelar pedido que está **aguardando pagamento** — o `#{id}` está com status "
                 f"**{STATUS_PEDIDO_LABEL.get(pedido_atual['status'], pedido_atual['status'])}**.",
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(f"✅ Pedido `#{id}` cancelado.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Pedido `#{id}` cancelado.", ephemeral=True)
 
     @pedido.command(name="listar", description="[ADMIN] Lista os últimos pedidos do servidor.")
     async def listar(self, interaction: discord.Interaction):
@@ -144,10 +145,10 @@ class Pedidos(commands.Cog):
         for p in pedidos:
             emoji = STATUS_PEDIDO_EMOJI.get(p["status"], "•")
             label = STATUS_PEDIDO_LABEL.get(p["status"], p["status"])
-            cupom = f" 🎟️{p['cupom_codigo']}" if p.get("cupom_codigo") else ""
+            cupom = f" {E.CUPOM}{p['cupom_codigo']}" if p.get("cupom_codigo") else ""
             linhas.append(f"`#{p['id']}` <@{p['user_id']}> — R$ {p['valor_total']:.2f}{cupom} — {emoji} {label}")
 
-        view = licenca.montar_view_licenca("📦 Últimos pedidos", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.ESTOQUE} Últimos pedidos", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
 
     @app_commands.command(name="meuspedidos", description="Mostra seus pedidos nesse servidor.")
@@ -163,7 +164,7 @@ class Pedidos(commands.Cog):
             label = STATUS_PEDIDO_LABEL.get(p["status"], p["status"])
             linhas.append(f"`#{p['id']}` — R$ {p['valor_total']:.2f} — {emoji} {label}")
 
-        view = licenca.montar_view_licenca("📦 Seus pedidos", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.ESTOQUE} Seus pedidos", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
 
 

@@ -25,6 +25,7 @@ import discord
 from discord.ext import commands
 
 from owner import _owner_id
+from emojis_app import E
 
 logger = logging.getLogger("ffzvendas")
 
@@ -43,16 +44,16 @@ class Sync(commands.Cog):
 
         if escopo == "aqui":
             if ctx.guild is None:
-                return await ctx.send("❌ Use `!sync aqui` dentro de um servidor.")
+                return await ctx.send(f"{E.ERRO} Use `!sync aqui` dentro de um servidor.")
             self.bot.tree.copy_global_to(guild=ctx.guild)
             synced = await self.bot.tree.sync(guild=ctx.guild)
             return await ctx.send(
-                f"✅ {len(synced)} comando(s) sincronizado(s) instantaneamente neste servidor."
+                f"{E.OK} {len(synced)} comando(s) sincronizado(s) instantaneamente neste servidor."
             )
 
         if escopo in ("todos", "todos_servidores", "all"):
             total_guilds = len(self.bot.guilds)
-            msg = await ctx.send(f"🔄 Sincronizando em {total_guilds} servidor(es)...")
+            msg = await ctx.send(f"{E.ATUALIZAR} Sincronizando em {total_guilds} servidor(es)...")
             ok, falhas = 0, 0
             for guild in self.bot.guilds:
                 try:
@@ -63,16 +64,16 @@ class Sync(commands.Cog):
                     falhas += 1
                     logger.error(f"❌ Falha ao sincronizar comandos no servidor {guild.id}")
                 await asyncio.sleep(1)  # evita rate limit da API do Discord
-            aviso_falhas = f" ⚠️ {falhas} falha(s)." if falhas else ""
+            aviso_falhas = f" {E.AVISO} {falhas} falha(s)." if falhas else ""
             return await msg.edit(
-                content=f"✅ Sincronizado instantaneamente em {ok}/{total_guilds} servidor(es).{aviso_falhas}"
+                content=f"{E.OK} Sincronizado instantaneamente em {ok}/{total_guilds} servidor(es).{aviso_falhas}"
             )
 
         # padrão: sync global
         synced = await self.bot.tree.sync()
         await ctx.send(
-            f"✅ {len(synced)} comando(s) sincronizado(s) globalmente.\n"
-            f"⏳ Pode levar até ~1h pra aparecer em todos os servidores (cache do Discord)."
+            f"{E.OK} {len(synced)} comando(s) sincronizado(s) globalmente.\n"
+            f"{E.TEMPO} Pode levar até ~1h pra aparecer em todos os servidores (cache do Discord)."
         )
 
 

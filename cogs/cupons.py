@@ -22,6 +22,7 @@ import database as db
 import licenca
 from constants import TipoCupom
 from permissoes import checar_admin_ou_avisar
+from emojis_app import E
 
 MAX_CUPONS_NA_LISTA = 15  # o card de Components V2 tem limite de texto (4000 caracteres)
 
@@ -45,11 +46,11 @@ def _formatar_data(valor: str | None) -> str:
 
 def _linha_cupom(cupom: dict) -> str:
     if not cupom["ativo"]:
-        status = "🚫 desativado"
+        status = f"{E.CANCELADO} desativado"
     elif cupom["expirado"]:
-        status = "⌛ expirado"
+        status = f"{E.EXPIRADO} expirado"
     else:
-        status = "✅ ativo"
+        status = f"{E.OK} ativo"
 
     limite = f"/{cupom['max_usos']}" if cupom["max_usos"] is not None else ""
     partes = [f"`{cupom['codigo']}` — **{_formatar_desconto(cupom)}**", f"{cupom['usos']}{limite} usos"]
@@ -103,7 +104,7 @@ class Cupons(commands.Cog):
         if produto_id is not None:
             produto = await db.obter_produto(produto_id)
             if not produto or produto["guild_id"] != interaction.guild.id:
-                await interaction.response.send_message("❌ Produto não encontrado nesse servidor.", ephemeral=True)
+                await interaction.response.send_message(f"{E.ERRO} Produto não encontrado nesse servidor.", ephemeral=True)
                 return
 
         try:
@@ -113,12 +114,12 @@ class Cupons(commands.Cog):
                 produto_id=produto_id, dias_validade=dias_validade,
             )
         except ValueError as erro:
-            await interaction.response.send_message(f"❌ {erro}", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} {erro}", ephemeral=True)
             return
 
         cupom = await db.obter_cupom(interaction.guild.id, codigo)
         view = licenca.montar_view_licenca(
-            f"🎟️ Cupom criado — `{cupom['codigo']}`",
+            f"{E.CUPOM} Cupom criado — `{cupom['codigo']}`",
             [_linha_cupom({**cupom, "usos": 0}), "---", "O cliente aplica no carrinho pelo botão **Usar cupom**."],
             client=interaction.client,
         )
@@ -137,7 +138,7 @@ class Cupons(commands.Cog):
         linhas = [_linha_cupom(c) for c in cupons[:MAX_CUPONS_NA_LISTA]]
         if len(cupons) > MAX_CUPONS_NA_LISTA:
             linhas.append(f"\n… e mais {len(cupons) - MAX_CUPONS_NA_LISTA} cupom(ns) mais antigo(s).")
-        view = licenca.montar_view_licenca("🎟️ Cupons da loja", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.CUPOM} Cupons da loja", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
 
     @cupom.command(name="desativar", description="[ADMIN] Desativa um cupom (quem já pagou com ele não é afetado).")
@@ -147,10 +148,10 @@ class Cupons(commands.Cog):
             return
         if await db.definir_cupom_ativo(interaction.guild.id, codigo, False):
             await interaction.response.send_message(
-                f"✅ Cupom `{db.normalizar_codigo_cupom(codigo)}` desativado.", ephemeral=True
+                f"{E.OK} Cupom `{db.normalizar_codigo_cupom(codigo)}` desativado.", ephemeral=True
             )
         else:
-            await interaction.response.send_message("❌ Cupom não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Cupom não encontrado nesse servidor.", ephemeral=True)
 
     @cupom.command(name="ativar", description="[ADMIN] Reativa um cupom desativado.")
     @app_commands.describe(codigo="Código do cupom")
@@ -159,10 +160,10 @@ class Cupons(commands.Cog):
             return
         if await db.definir_cupom_ativo(interaction.guild.id, codigo, True):
             await interaction.response.send_message(
-                f"✅ Cupom `{db.normalizar_codigo_cupom(codigo)}` ativado.", ephemeral=True
+                f"{E.OK} Cupom `{db.normalizar_codigo_cupom(codigo)}` ativado.", ephemeral=True
             )
         else:
-            await interaction.response.send_message("❌ Cupom não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Cupom não encontrado nesse servidor.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

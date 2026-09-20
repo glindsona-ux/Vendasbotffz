@@ -20,6 +20,7 @@ import licenca
 from gateways import GATEWAYS, obter_classe_gateway
 from permissoes import checar_admin_ou_avisar
 from pix_validators import TIPO_CHAVE_LABEL, detectar_tipo_chave
+from emojis_app import E
 
 
 # ─── Modal: Pix manual ──────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ class ModalPixManual(discord.ui.Modal, title="Configurar Pix manual"):
         tipo = detectar_tipo_chave(str(self.chave))
         if tipo is None:
             await interaction.response.send_message(
-                "❌ Essa chave não parece válida. Aceito CPF, telefone (com DDD), e-mail ou chave aleatória (UUID).",
+                f"{E.ERRO} Essa chave não parece válida. Aceito CPF, telefone (com DDD), e-mail ou chave aleatória (UUID).",
                 ephemeral=True,
             )
             return
@@ -42,7 +43,7 @@ class ModalPixManual(discord.ui.Modal, title="Configurar Pix manual"):
             str(self.cidade).strip() or "Sao Paulo",
         )
         await interaction.response.send_message(
-            f"✅ Pix manual configurado — chave `{self.chave}` ({TIPO_CHAVE_LABEL[tipo]}).", ephemeral=True
+            f"{E.OK} Pix manual configurado — chave `{self.chave}` ({TIPO_CHAVE_LABEL[tipo]}).", ephemeral=True
         )
 
 
@@ -73,12 +74,12 @@ class ModalGateway(discord.ui.Modal):
         aviso_extra = ""
         if not self.classe.IMPLEMENTADO:
             aviso_extra = (
-                f"\n\n⚠️ As credenciais já ficam salvas (criptografadas), mas a integração automática do "
+                f"\n\n{E.AVISO} As credenciais já ficam salvas (criptografadas), mas a integração automática do "
                 f"**{self.classe.LABEL}** ainda não está pronta — pedidos com esse gateway caem pro aviso "
                 f"de \"em breve\" até eu terminar a implementação real."
             )
         await interaction.response.send_message(
-            f"✅ **{self.classe.LABEL}** configurado nesse servidor.{aviso_extra}", ephemeral=True
+            f"{E.OK} **{self.classe.LABEL}** configurado nesse servidor.{aviso_extra}", ephemeral=True
         )
 
 
@@ -87,8 +88,10 @@ class ModalGateway(discord.ui.Modal):
 class BotaoConfigurarGateway(discord.ui.Button):
     def __init__(self, gateway_nome: str, configurado: bool):
         classe = obter_classe_gateway(gateway_nome)
-        label = f"{classe.LABEL}" + (" ✅" if configurado else "")
-        super().__init__(label=label, style=discord.ButtonStyle.secondary, emoji=classe.EMOJI)
+        # custom emoji não entra no texto do label — o "configurado" agora aparece
+        # como botão verde (o emoji do gateway continua no campo `emoji=`).
+        estilo = discord.ButtonStyle.success if configurado else discord.ButtonStyle.secondary
+        super().__init__(label=f"{classe.LABEL}", style=estilo, emoji=classe.EMOJI)
         self.gateway_nome = gateway_nome
 
     async def callback(self, interaction: discord.Interaction):
@@ -111,7 +114,7 @@ class SelectGatewayPadrao(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         await db.definir_gateway_padrao(interaction.guild.id, self.values[0])
         await interaction.response.send_message(
-            f"✅ **{obter_classe_gateway(self.values[0]).LABEL}** definido como gateway padrão do checkout automático.",
+            f"{E.OK} **{obter_classe_gateway(self.values[0]).LABEL}** definido como gateway padrão do checkout automático.",
             ephemeral=True,
         )
 
@@ -127,7 +130,7 @@ class ViewGateways(discord.ui.View):
 
 class BotaoAbrirGateways(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Gateways automáticos", style=discord.ButtonStyle.primary, emoji="⚡")
+        super().__init__(label="Gateways automáticos", style=discord.ButtonStyle.primary, emoji=E.RAIO)
 
     async def callback(self, interaction: discord.Interaction):
         configurados = await db.listar_gateways_configurados(interaction.guild.id)
@@ -136,20 +139,20 @@ class BotaoAbrirGateways(discord.ui.Button):
 
         linhas = ["Escolha um gateway abaixo pra cadastrar (ou trocar) a chave de API dele."]
         for nome, classe in GATEWAYS.items():
-            status = "✅ configurado" if nome in configurados else "⚪ não configurado"
+            status = f"{E.ATIVO} configurado" if nome in configurados else f"{E.INATIVO} não configurado"
             pronto = "" if classe.IMPLEMENTADO else " *(integração ainda não implementada)*"
             marca_padrao = " — **padrão atual**" if nome == padrao else ""
             linhas.append(f"{classe.EMOJI} **{classe.LABEL}** — {status}{pronto}{marca_padrao}")
 
         view = ViewGateways(interaction.guild.id, configurados, padrao)
-        embed_view = licenca.montar_view_licenca("⚡ Gateways de pagamento automático", linhas, client=interaction.client)
+        embed_view = licenca.montar_view_licenca(f"{E.RAIO} Gateways de pagamento automático", linhas, client=interaction.client)
         await interaction.response.send_message(view=embed_view, ephemeral=True)
         await interaction.followup.send(view=view, ephemeral=True)
 
 
 class BotaoAbrirPixManual(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Pix manual", style=discord.ButtonStyle.secondary, emoji="🔑")
+        super().__init__(label="Pix manual", style=discord.ButtonStyle.secondary, emoji=E.PIX)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(ModalPixManual())
@@ -157,11 +160,11 @@ class BotaoAbrirPixManual(discord.ui.Button):
 
 class BotaoInfoVitrines(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Vitrines", style=discord.ButtonStyle.secondary, emoji="🖼️")
+        super().__init__(label="Vitrines", style=discord.ButtonStyle.secondary, emoji=E.SACOLA)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "🖼️ **Vitrines** — use:\n"
+            f"{E.SACOLA} **Vitrines** — use:\n"
             "• `/vitrine criar` — cria uma vitrine nova (título, descrição, banner)\n"
             "• `/vitrine produto_add` / `produto_remover` — escolhe quais produtos aparecem nela\n"
             "• `/vitrine postar` — publica a vitrine nesse canal com o botão **Comprar**\n"
@@ -172,11 +175,11 @@ class BotaoInfoVitrines(discord.ui.Button):
 
 class BotaoInfoProdutos(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Produtos", style=discord.ButtonStyle.secondary, emoji="📦")
+        super().__init__(label="Produtos", style=discord.ButtonStyle.secondary, emoji=E.ESTOQUE)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "📦 **Produtos** — use:\n"
+            f"{E.ESTOQUE} **Produtos** — use:\n"
             "• `/produto criar` — cadastra um produto novo (nome, preço, tipo de entrega)\n"
             "• `/produto estoque` / `estoque_arquivo` — carrega o estoque (entrega automática)\n"
             "• `/produto editar` — muda nome, preço, descrição, imagem ou ativo/inativo\n"
@@ -208,20 +211,20 @@ class ConfigurarLoja(commands.Cog):
 
         linhas = []
         if config and config.get("chave_pix"):
-            linhas.append(f"🔑 Pix manual: **configurado** ({config['nome_recebedor']})")
+            linhas.append(f"{E.PIX} Pix manual: **configurado** ({config['nome_recebedor']})")
         else:
-            linhas.append("🔑 Pix manual: ⚪ não configurado")
+            linhas.append(f"{E.PIX} Pix manual: {E.INATIVO} não configurado")
 
         if gateways_ativos:
             nomes = ", ".join(obter_classe_gateway(g).LABEL for g in gateways_ativos)
-            linhas.append(f"⚡ Gateways automáticos ativos: **{nomes}**")
+            linhas.append(f"{E.RAIO} Gateways automáticos ativos: **{nomes}**")
         else:
-            linhas.append("⚡ Gateways automáticos: ⚪ nenhum configurado")
+            linhas.append(f"{E.RAIO} Gateways automáticos: {E.INATIVO} nenhum configurado")
 
         linhas.append("---")
         linhas.append("Escolha abaixo o que quer configurar:")
 
-        view = licenca.montar_view_licenca("🛠️ Configurar loja", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.FERRAMENTA} Configurar loja", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
         await interaction.followup.send(view=ViewPainelPrincipal(), ephemeral=True)
 

@@ -21,6 +21,7 @@ from constants import (
 from estoque_utils import ArquivoEstoqueInvalido, itens_do_arquivo
 from permissoes import checar_admin_ou_avisar
 from pix_validators import TIPO_CHAVE_LABEL, detectar_tipo_chave
+from emojis_app import E
 
 
 async def _produto_da_guild_ou_avisar(interaction: discord.Interaction, produto_id: int, exigir_automatico: bool = False):
@@ -29,22 +30,22 @@ async def _produto_da_guild_ou_avisar(interaction: discord.Interaction, produto_
     comando deve só dar `return`."""
     produto = await db.obter_produto(produto_id)
     if not produto or produto["guild_id"] != interaction.guild.id:
-        await interaction.response.send_message("❌ Produto não encontrado nesse servidor.", ephemeral=True)
+        await interaction.response.send_message(f"{E.ERRO} Produto não encontrado nesse servidor.", ephemeral=True)
         return None
     if exigir_automatico and produto["tipo_entrega"] != TipoEntrega.AUTOMATICA.value:
         await interaction.response.send_message(
-            "❌ Esse produto é de entrega **manual** — não usa estoque.", ephemeral=True
+            f"{E.ERRO} Esse produto é de entrega **manual** — não usa estoque.", ephemeral=True
         )
         return None
     return produto
 
 
 def _texto_resultado_estoque(nome: str, resultado: dict, total_disponivel: int) -> str:
-    linhas = [f"✅ **{resultado['adicionados']}** item(ns) adicionado(s) ao estoque de **{nome}**."]
+    linhas = [f"{E.OK} **{resultado['adicionados']}** item(ns) adicionado(s) ao estoque de **{nome}**."]
     if resultado["duplicados"]:
-        linhas.append(f"↩️ {resultado['duplicados']} repetido(s) ignorado(s) (já estavam no estoque ou apareceram duas vezes).")
+        linhas.append(f"{E.VOLTAR} {resultado['duplicados']} repetido(s) ignorado(s) (já estavam no estoque ou apareceram duas vezes).")
     if resultado["invalidos"]:
-        linhas.append(f"⚠️ {resultado['invalidos']} linha(s) grande(s) demais ignorada(s) (máx. {MAX_TAMANHO_ITEM_ESTOQUE} caracteres).")
+        linhas.append(f"{E.AVISO} {resultado['invalidos']} linha(s) grande(s) demais ignorada(s) (máx. {MAX_TAMANHO_ITEM_ESTOQUE} caracteres).")
     linhas.append(f"Total disponível agora: **{total_disponivel}**.")
     return "\n".join(linhas)
 
@@ -70,7 +71,7 @@ class LojaAdmin(commands.Cog):
         tipo = detectar_tipo_chave(chave)
         if tipo is None:
             await interaction.response.send_message(
-                "❌ Essa chave não parece válida. Aceito CPF, telefone (com DDD), e-mail ou chave aleatória (UUID).",
+                f"{E.ERRO} Essa chave não parece válida. Aceito CPF, telefone (com DDD), e-mail ou chave aleatória (UUID).",
                 ephemeral=True,
             )
             return
@@ -78,7 +79,7 @@ class LojaAdmin(commands.Cog):
         await db.definir_config_loja(interaction.guild.id, chave.strip(), tipo, nome_recebedor.strip(), cidade.strip())
 
         view = licenca.montar_view_licenca(
-            "✅ Pagamento configurado",
+            f"{E.OK} Pagamento configurado",
             [
                 f"**Chave Pix:** `{chave}` ({TIPO_CHAVE_LABEL[tipo]})",
                 f"**Recebedor:** {nome_recebedor}",
@@ -116,7 +117,7 @@ class LojaAdmin(commands.Cog):
         if not await checar_admin_ou_avisar(interaction):
             return
         if preco <= 0:
-            await interaction.response.send_message("❌ O preço precisa ser maior que zero.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} O preço precisa ser maior que zero.", ephemeral=True)
             return
 
         imagem_limpa = db.limpar_url_imagem(imagem_url) if imagem_url else None
@@ -156,7 +157,7 @@ class LojaAdmin(commands.Cog):
 
         linhas = [linha.strip() for linha in itens.replace("\r", "").split("\n") if linha.strip()]
         if not linhas:
-            await interaction.response.send_message("❌ Nenhum item válido encontrado — separe um por linha.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Nenhum item válido encontrado — separe um por linha.", ephemeral=True)
             return
 
         resultado = await db.adicionar_estoque_itens(produto_id, linhas, permitir_duplicados=permitir_repetidos)
@@ -188,11 +189,11 @@ class LojaAdmin(commands.Cog):
             return
 
         if not arquivo.filename.lower().endswith(".txt"):
-            await interaction.response.send_message("❌ Envie um arquivo **.txt** (um item por linha).", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Envie um arquivo **.txt** (um item por linha).", ephemeral=True)
             return
         if arquivo.size > MAX_BYTES_ARQUIVO_ESTOQUE:
             await interaction.response.send_message(
-                f"❌ Arquivo grande demais ({arquivo.size / 1_000_000:.1f} MB). O máximo é "
+                f"{E.ERRO} Arquivo grande demais ({arquivo.size / 1_000_000:.1f} MB). O máximo é "
                 f"{MAX_BYTES_ARQUIVO_ESTOQUE / 1_000_000:.0f} MB — divida em partes.",
                 ephemeral=True,
             )
@@ -202,16 +203,16 @@ class LojaAdmin(commands.Cog):
         try:
             itens = itens_do_arquivo(await arquivo.read())
         except ArquivoEstoqueInvalido as erro:
-            await interaction.followup.send(f"❌ {erro}", ephemeral=True)
+            await interaction.followup.send(f"{E.ERRO} {erro}", ephemeral=True)
             return
         except discord.HTTPException:
-            await interaction.followup.send("❌ Não consegui baixar o arquivo. Tente enviar de novo.", ephemeral=True)
+            await interaction.followup.send(f"{E.ERRO} Não consegui baixar o arquivo. Tente enviar de novo.", ephemeral=True)
             return
 
         resultado = await db.adicionar_estoque_itens(produto_id, itens, permitir_duplicados=permitir_repetidos)
         total = await db.contar_estoque_disponivel(produto_id)
         await interaction.followup.send(
-            f"📄 Li **{len(itens)}** linha(s) de `{arquivo.filename}`.\n"
+            f"{E.ARQUIVO} Li **{len(itens)}** linha(s) de `{arquivo.filename}`.\n"
             + _texto_resultado_estoque(produto_atual["nome"], resultado, total),
             ephemeral=True,
         )
@@ -231,7 +232,7 @@ class LojaAdmin(commands.Cog):
         disponivel = await db.contar_estoque_disponivel(produto_id)
         if not confirmar:
             await interaction.response.send_message(
-                f"⚠️ Isso apagaria **{disponivel}** item(ns) disponíveis de **{produto_atual['nome']}** "
+                f"{E.AVISO} Isso apagaria **{disponivel}** item(ns) disponíveis de **{produto_atual['nome']}** "
                 f"(o que já foi entregue não é tocado). Rode de novo com `confirmar: True` pra apagar.",
                 ephemeral=True,
             )
@@ -239,7 +240,7 @@ class LojaAdmin(commands.Cog):
 
         apagados = await db.limpar_estoque_disponivel(produto_id)
         await interaction.response.send_message(
-            f"🧹 {apagados} item(ns) apagado(s) do estoque de **{produto_atual['nome']}**.", ephemeral=True
+            f"{E.LIXO} {apagados} item(ns) apagado(s) do estoque de **{produto_atual['nome']}**.", ephemeral=True
         )
 
     @produto.command(name="editar", description="[ADMIN] Edita nome, preço, descrição, imagem ou liga/desliga um produto.")
@@ -268,13 +269,13 @@ class LojaAdmin(commands.Cog):
             return
 
         if preco is not None and preco <= 0:
-            await interaction.response.send_message("❌ O preço precisa ser maior que zero.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} O preço precisa ser maior que zero.", ephemeral=True)
             return
         imagem_limpa = None
         if imagem_url is not None:
             imagem_limpa = db.limpar_url_imagem(imagem_url)
             if imagem_limpa is None:
-                await interaction.response.send_message("❌ Essa URL de imagem não parece válida (precisa começar com http:// ou https://).", ephemeral=True)
+                await interaction.response.send_message(f"{E.ERRO} Essa URL de imagem não parece válida (precisa começar com http:// ou https://).", ephemeral=True)
                 return
 
         mudancas = {
@@ -290,9 +291,10 @@ class LojaAdmin(commands.Cog):
 
         await db.editar_produto(produto_id, **mudancas)
         novo = await db.obter_produto(produto_id)
+        status_novo = f"{E.OK} ativo" if novo["ativo"] else f"{E.CANCELADO} inativo"
         await interaction.response.send_message(
-            f"✅ Produto `#{produto_id}` atualizado: **{novo['nome']}** — R$ {novo['preco']:.2f} — "
-            f"{'✅ ativo' if novo['ativo'] else '🚫 inativo'}.",
+            f"{E.OK} Produto `#{produto_id}` atualizado: **{novo['nome']}** — R$ {novo['preco']:.2f} — "
+            f"{status_novo}.",
             ephemeral=True,
         )
 
@@ -307,13 +309,21 @@ class LojaAdmin(commands.Cog):
             return
 
         linhas = []
-        for p in produtos:
-            status = "🚫 inativo" if not p["ativo"] else "✅ ativo"
+        usados = 0
+        for i, p in enumerate(produtos):
+            status = f"{E.CANCELADO} inativo" if not p["ativo"] else f"{E.OK} ativo"
             emoji_entrega = TIPO_ENTREGA_EMOJI[TipoEntrega(p["tipo_entrega"])]
             extra = f" — estoque: {p['estoque_disponivel']}" if p["tipo_entrega"] == TipoEntrega.AUTOMATICA.value else ""
-            linhas.append(f"`#{p['id']}` **{p['nome']}** — R$ {p['preco']:.2f} {emoji_entrega}{extra} — {status}")
+            linha = f"`#{p['id']}` **{p['nome']}** — R$ {p['preco']:.2f} {emoji_entrega}{extra} — {status}"
+            # O card de Components V2 aceita no máximo 4000 caracteres de texto e cada
+            # emoji custom ocupa ~30 (o unicode ocupava 1-2), então corta a lista antes de estourar.
+            if usados + len(linha) > 3400:
+                linhas.append(f"\n… e mais {len(produtos) - i} produto(s).")
+                break
+            usados += len(linha) + 1
+            linhas.append(linha)
 
-        view = licenca.montar_view_licenca("🛒 Produtos da loja", linhas, client=interaction.client)
+        view = licenca.montar_view_licenca(f"{E.CARRINHO} Produtos da loja", linhas, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
 
     @produto.command(name="remover", description="[ADMIN] Remove (desativa) um produto do catálogo.")
@@ -324,11 +334,11 @@ class LojaAdmin(commands.Cog):
 
         produto_atual = await db.obter_produto(produto_id)
         if not produto_atual or produto_atual["guild_id"] != interaction.guild.id:
-            await interaction.response.send_message("❌ Produto não encontrado nesse servidor.", ephemeral=True)
+            await interaction.response.send_message(f"{E.ERRO} Produto não encontrado nesse servidor.", ephemeral=True)
             return
 
         await db.remover_produto(produto_id)
-        await interaction.response.send_message(f"✅ Produto **{produto_atual['nome']}** removido do catálogo.", ephemeral=True)
+        await interaction.response.send_message(f"{E.OK} Produto **{produto_atual['nome']}** removido do catálogo.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
