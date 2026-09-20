@@ -38,6 +38,7 @@ from constants import (
     TipoEntrega,
 )
 from estoque_utils import separar_validos
+from crypto_utils import criptografar, descriptografar
 
 DB_PATH = "ffz_vendas.db"
 
@@ -172,6 +173,50 @@ async def setup_db():
         )
     """)
 
+    # Migração leve: gateway automático padrão (qual dos configurados em
+    # gateways_config é oferecido no botão "pagar automático" do checkout).
+    await _adicionar_coluna_se_faltar(db, "config_loja", "gateway_padrao", "TEXT")
+
+    # ─── Loja: gateways de pagamento automático (por servidor) ─────────────
+    # Cada servidor liga o(s) gateway(s) que quiser (Mercado Pago, LivePix,
+    # PagBank...) com as próprias credenciais — o campo `credenciais` é o
+    # JSON criptografado (crypto_utils), nunca texto puro.
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS gateways_config (
+            guild_id INTEGER NOT NULL,
+            gateway TEXT NOT NULL,
+            credenciais TEXT NOT NULL,
+            ativo INTEGER DEFAULT 1,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, gateway)
+        )
+    """)
+
+    # ─── Loja: vitrines (posts públicos personalizáveis) ───────────────────
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS vitrines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            slug TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            descricao TEXT,
+            banner_url TEXT,
+            cor INTEGER,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(guild_id, slug)
+        )
+    """)
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS vitrine_produtos (
+            vitrine_id INTEGER NOT NULL REFERENCES vitrines(id) ON DELETE CASCADE,
+            produto_id INTEGER NOT NULL REFERENCES produtos(id) ON DELETE CASCADE,
+            ordem INTEGER DEFAULT 0,
+            PRIMARY KEY (vitrine_id, produto_id)
+        )
+    """)
+
     await db.execute("""
         CREATE TABLE IF NOT EXISTS produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,6 +284,16 @@ async def setup_db():
     await _adicionar_coluna_se_faltar(db, "pedidos", "desconto", "REAL DEFAULT 0")
     await _adicionar_coluna_se_faltar(db, "pedidos", "cupom_codigo", "TEXT")
     await _adicionar_coluna_se_faltar(db, "pedidos", "aprovado_por", "INTEGER")
+    # Gateway automático usado nesse pedido (None = Pix manual). charge_id é
+    # o ID da cobrança no gateway externo — é por ele que o webhook acha de
+    # volta qual pedido confirmar. canal_thread_id é o tópico privado
+    # (vitrine -> botão Comprar) onde esse pedido nasceu, se houver.
+    await _adicionar_coluna_se_faltar(db, "pedidos", "gateway", "TEXT")
+    await _adicionar_coluna_se_faltar(db, "pedidos", "gateway_charge_id", "TEXT")
+    await _adicionar_coluna_se_faltar(db, "pedidos", "canal_thread_id", "INTEGER")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_gateway_charge ON pedidos (gateway, gateway_charge_id)"
+    )
 
     # ─── Loja: cupons ───────────────────────────────────────────────────
     await db.execute("""
@@ -586,6 +641,174 @@ async def definir_config_loja(guild_id: int, chave_pix: str, tipo_chave: str, no
         (guild_id, chave_pix, tipo_chave, nome_recebedor, cidade),
     )
     await db.commit()
+
+
+# ─── Loja: gateways de pagamento automático ─────────────────────────────────
+
+async def definir_gateway_config(guild_id: int, gateway: str, credenciais: dict):
+    """Salva/atualiza as credenciais de um gateway pra esse servidor. O
+    dict inteiro vai criptografado (não só os campos marcados secreto=True
+    na definição do gateway) — mais simples e mais seguro por padrão."""
+    credenciais_cripto = criptografar(json.dumps(credenciais, ensure_ascii=False))
+    db = await get_conn()
+    await db.execute(
+        "INSERT INTO gateways_config (guild_id, gateway, credenciais, ativo, atualizado_em) "
+        "VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP) "
+        "ON CONFLICT(guild_id, gateway) DO UPDATE SET "
+        "credenciais = excluded.credenciais, ativo = 1, atualizado_em = CURRENT_TIMESTAMP",
+        (guild_id, gateway, credenciais_cripto),
+    )
+    await db.commit()
+
+
+async def obter_gateway_config(guild_id: int, gateway: str) -> dict | None:
+    """Retorna as credenciais JÁ DESCRIPTOGRAFADAS desse gateway, ou None
+    se não estiver configurado (ou desativado, ou ilegível)."""
+    db = await get_conn()
+    cursor = await db.execute(
+        "SELECT credenciais, ativo FROM gateways_config WHERE guild_id = ? AND gateway = ?",
+        (guild_id, gateway),
+    )
+    row = await cursor.fetchone()
+    if not row or not row["ativo"]:
+        return None
+    texto = descriptografar(row["credenciais"])
+    if texto is None:
+        return None
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        return None
+
+
+async def listar_gateways_configurados(guild_id: int) -> list[str]:
+    """Nomes dos gateways ativos e configurados nesse servidor (não expõe
+    as credenciais — só pra montar a lista de opções no checkout)."""
+    db = await get_conn()
+    cursor = await db.execute(
+        "SELECT gateway FROM gateways_config WHERE guild_id = ? AND ativo = 1", (guild_id,)
+    )
+    rows = await cursor.fetchall()
+    return [r["gateway"] for r in rows]
+
+
+async def remover_gateway_config(guild_id: int, gateway: str):
+    db = await get_conn()
+    await db.execute(
+        "DELETE FROM gateways_config WHERE guild_id = ? AND gateway = ?", (guild_id, gateway)
+    )
+    # Se esse era o gateway padrão, tira também — senão o checkout oferece
+    # um botão "pagar automático" que não tem mais credencial nenhuma.
+    await db.execute(
+        "UPDATE config_loja SET gateway_padrao = NULL WHERE guild_id = ? AND gateway_padrao = ?",
+        (guild_id, gateway),
+    )
+    await db.commit()
+
+
+async def definir_gateway_padrao(guild_id: int, gateway: str | None):
+    db = await get_conn()
+    await db.execute(
+        "INSERT INTO config_loja (guild_id, gateway_padrao) VALUES (?, ?) "
+        "ON CONFLICT(guild_id) DO UPDATE SET gateway_padrao = excluded.gateway_padrao",
+        (guild_id, gateway),
+    )
+    await db.commit()
+
+
+# ─── Loja: vitrines ──────────────────────────────────────────────────────────
+
+def normalizar_slug_vitrine(nome: str) -> str:
+    slug = re.sub(r"[^a-z0-9_-]+", "-", nome.strip().lower())
+    return re.sub(r"-{2,}", "-", slug).strip("-")[:50] or "vitrine"
+
+
+async def criar_vitrine(guild_id: int, nome: str, titulo: str, descricao: str = None, banner_url: str = None, cor: int = None) -> tuple[int | None, str | None]:
+    slug = normalizar_slug_vitrine(nome)
+    db = await get_conn()
+    try:
+        cursor = await db.execute(
+            "INSERT INTO vitrines (guild_id, slug, titulo, descricao, banner_url, cor) VALUES (?, ?, ?, ?, ?, ?)",
+            (guild_id, slug, titulo.strip(), descricao, banner_url, cor),
+        )
+    except sqlite3.IntegrityError:
+        return None, f"Já existe uma vitrine chamada `{slug}` nesse servidor — escolha outro nome."
+    await db.commit()
+    return cursor.lastrowid, None
+
+
+async def editar_vitrine(vitrine_id: int, **campos):
+    permitidos = {"titulo", "descricao", "banner_url", "cor"}
+    campos = {k: v for k, v in campos.items() if k in permitidos and v is not None}
+    if not campos:
+        return
+    db = await get_conn()
+    set_clause = ", ".join(f"{k} = ?" for k in campos)
+    await db.execute(f"UPDATE vitrines SET {set_clause} WHERE id = ?", (*campos.values(), vitrine_id))
+    await db.commit()
+
+
+async def obter_vitrine(vitrine_id: int) -> dict | None:
+    db = await get_conn()
+    cursor = await db.execute("SELECT * FROM vitrines WHERE id = ?", (vitrine_id,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def obter_vitrine_por_slug(guild_id: int, slug: str) -> dict | None:
+    db = await get_conn()
+    cursor = await db.execute(
+        "SELECT * FROM vitrines WHERE guild_id = ? AND slug = ?", (guild_id, normalizar_slug_vitrine(slug))
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def listar_vitrines(guild_id: int) -> list[dict]:
+    db = await get_conn()
+    cursor = await db.execute("SELECT * FROM vitrines WHERE guild_id = ? ORDER BY titulo", (guild_id,))
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def remover_vitrine(vitrine_id: int):
+    db = await get_conn()
+    await db.execute("DELETE FROM vitrines WHERE id = ?", (vitrine_id,))
+    await db.commit()
+
+
+async def adicionar_produto_vitrine(vitrine_id: int, produto_id: int):
+    db = await get_conn()
+    cursor = await db.execute("SELECT COALESCE(MAX(ordem), -1) + 1 FROM vitrine_produtos WHERE vitrine_id = ?", (vitrine_id,))
+    proxima_ordem = (await cursor.fetchone())[0]
+    await db.execute(
+        "INSERT OR IGNORE INTO vitrine_produtos (vitrine_id, produto_id, ordem) VALUES (?, ?, ?)",
+        (vitrine_id, produto_id, proxima_ordem),
+    )
+    await db.commit()
+
+
+async def remover_produto_vitrine(vitrine_id: int, produto_id: int):
+    db = await get_conn()
+    await db.execute(
+        "DELETE FROM vitrine_produtos WHERE vitrine_id = ? AND produto_id = ?", (vitrine_id, produto_id)
+    )
+    await db.commit()
+
+
+async def produtos_da_vitrine(vitrine_id: int, apenas_ativos: bool = True) -> list[dict]:
+    db = await get_conn()
+    query = (
+        "SELECT p.* FROM produtos p JOIN vitrine_produtos vp ON vp.produto_id = p.id "
+        "WHERE vp.vitrine_id = ?"
+    )
+    if apenas_ativos:
+        query += " AND p.ativo = 1"
+    query += " ORDER BY vp.ordem"
+    cursor = await db.execute(query, (vitrine_id,))
+    produtos = [dict(r) for r in await cursor.fetchall()]
+    for p in produtos:
+        p["estoque_disponivel"] = await contar_estoque_disponivel(p["id"])
+    return produtos
 
 
 # ─── Loja: produtos ─────────────────────────────────────────────────────────
@@ -1093,6 +1316,38 @@ async def salvar_payload_pix(pedido_id: int, payload_pix: str):
     db = await get_conn()
     await db.execute("UPDATE pedidos SET payload_pix = ? WHERE id = ?", (payload_pix, pedido_id))
     await db.commit()
+
+
+async def definir_gateway_pedido(pedido_id: int, gateway: str, charge_id: str):
+    """Registra que esse pedido foi cobrado através de um gateway
+    automático — é por (gateway, charge_id) que o webhook encontra de
+    volta o pedido quando o pagamento é confirmado."""
+    db = await get_conn()
+    await db.execute(
+        "UPDATE pedidos SET gateway = ?, gateway_charge_id = ? WHERE id = ?",
+        (gateway, str(charge_id), pedido_id),
+    )
+    await db.commit()
+
+
+async def definir_thread_pedido(pedido_id: int, canal_thread_id: int):
+    db = await get_conn()
+    await db.execute("UPDATE pedidos SET canal_thread_id = ? WHERE id = ?", (canal_thread_id, pedido_id))
+    await db.commit()
+
+
+async def obter_pedido_por_charge(gateway: str, charge_id: str) -> dict | None:
+    db = await get_conn()
+    cursor = await db.execute(
+        "SELECT * FROM pedidos WHERE gateway = ? AND gateway_charge_id = ?", (gateway, str(charge_id))
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    pedido = dict(row)
+    pedido["itens"] = json.loads(pedido["itens_json"])
+    pedido["entrega"] = json.loads(pedido["entrega_json"]) if pedido["entrega_json"] else None
+    return pedido
 
 
 async def marcar_pedido_pago(pedido_id: int, aprovado_por: int | None = None) -> bool:
